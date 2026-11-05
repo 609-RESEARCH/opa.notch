@@ -14,8 +14,8 @@ struct OpaNotchApp: App {
     var body: some Scene {
         // A template image: the app icon's cut disc, tinted by the system for the menu bar.
         MenuBarExtra("opa.notch", image: "MenuBarIcon", isInserted: $showMenuBarIcon) {
-            Button("Open Notch") { appDelegate.notch.viewModel.open() }
-            Button("New Reminder…") { appDelegate.notch.viewModel.requestQuickAdd() }
+            Button("Open Notch") { appDelegate.notch.open() }
+            Button("New Reminder…") { appDelegate.notch.quickAdd() }
             Divider()
             Button("Settings…") { SettingsWindowController.shared.showWindow() }
                 .keyboardShortcut(",")
@@ -35,11 +35,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Debug aid: `open opa.notch.app --args -OpaOpenOnLaunch YES` to inspect the open state.
         if UserDefaults.standard.bool(forKey: "OpaOpenOnLaunch") {
-            notch.viewModel.open()
+            notch.open()
         }
 
         #if DEBUG
-        // `--args -OpaSnapshot YES` writes the panel's rendering to the sandbox tmp dir.
+        // `--args -OpaSnapshot YES` writes each display's panel to the sandbox tmp dir.
         if UserDefaults.standard.bool(forKey: "OpaSnapshot") {
             Task {
                 try? await Task.sleep(for: .seconds(2))

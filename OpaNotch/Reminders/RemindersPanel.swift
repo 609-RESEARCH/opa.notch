@@ -52,6 +52,7 @@ struct RemindersPanel: View {
             }
             Spacer(minLength: 4)
             ScopePicker(selection: $scope, counts: counts)
+                .fixedSize()
                 .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
         }
         .padding(.horizontal, 6)

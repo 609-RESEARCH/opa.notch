@@ -5,14 +5,29 @@
 
 import AppKit
 
+/// How the notch fits one particular display.
+struct NotchLayout: Equatable {
+    /// The largest the open notch may get. It's smaller when its content needs less.
+    var openSize: CGSize
+    /// The transparent window holding the notch. Never larger than the display, so it
+    /// can't spill onto a neighbouring one.
+    var windowSize: CGSize
+    /// On very narrow displays the two panels go one above the other.
+    var stacksPanels: Bool
+    /// Whether there's room beside the closed notch for a detached activity.
+    var fitsDetachedActivity: Bool
+}
+
 enum NotchGeometry {
-    static let openSize = CGSize(width: 700, height: 296)
+    static let maxOpenSize = CGSize(width: 700, height: 296)
+    /// Stacked panels trade width for height, so they get more of it.
+    static let maxStackedHeight: CGFloat = 560
+    /// Below this open width, two panels side by side would be too cramped to read.
+    static let stackingWidth: CGFloat = 600
+    /// The open notch keeps at least this much of the display visible on each side.
+    static let displayMargin: CGFloat = 8
     /// Room around the open notch so its shadow and hover hint are never clipped by the window.
     static let shadowPadding: CGFloat = 36
-    static let windowSize = CGSize(
-        width: openSize.width + shadowPadding * 2,
-        height: openSize.height + shadowPadding
-    )
 
     static let closedRadii = (top: CGFloat(6), bottom: CGFloat(14))
     static let openRadii = (top: CGFloat(20), bottom: CGFloat(28))
@@ -51,12 +66,68 @@ enum NotchGeometry {
         return max(hardware, screen.frame.maxY - screen.visibleFrame.maxY)
     }
 
-    /// The screen to live on: the user's choice, else the built-in display with a notch, else main.
+    static func layout(forDisplay display: CGSize) -> NotchLayout {
+        let width = min(maxOpenSize.width, display.width - displayMargin * 2)
+        let stacks = width < stackingWidth
+        let height = min(stacks ? maxStackedHeight : maxOpenSize.height, display.height - displayMargin * 2)
+        let window = CGSize(
+            width: min(width + shadowPadding * 2, display.width),
+            height: min(height + shadowPadding, display.height)
+        )
+        return NotchLayout(
+            openSize: CGSize(width: width, height: height),
+            windowSize: window,
+            stacksPanels: stacks,
+            fitsDetachedActivity: window.width >= 440
+        )
+    }
+
+    /// Centred along the display's top edge and snapped to whole pixels: a window on a
+    /// half pixel, as an odd-width 1x display would give, draws blurry.
+    static func panelFrame(display: CGRect, scale: CGFloat, windowSize: CGSize) -> CGRect {
+        let x = display.midX - windowSize.width / 2
+        return CGRect(
+            x: (x * scale).rounded() / scale,
+            y: display.maxY - windowSize.height,
+            width: windowSize.width,
+            height: windowSize.height
+        )
+    }
+
+    /// The displays to live on: the one the user chose if it's connected, otherwise all of them.
     @MainActor
-    static func targetScreen(preferredUUID: String?) -> NSScreen? {
-        if let uuid = preferredUUID, let screen = NSScreen.screen(withUUID: uuid) {
-            return screen
+    static func targetScreens(preferredUUID: String?) -> [NSScreen] {
+        let screens = NSScreen.screens
+        if let preferredUUID, let chosen = screens.first(where: { $0.displayUUID == preferredUUID }) {
+            return [chosen]
         }
-        return NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main ?? NSScreen.screens.first
+        return screens
+    }
+
+    // MARK: - Full-screen detection
+
+    /// Bounds of other apps' ordinary windows in the current Spaces. A full-screen app's
+    /// window exactly fills its display. Reading bounds needs no Screen Recording permission.
+    static func fullscreenCandidateBounds() -> [CGRect] {
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return []
+        }
+        let ownProcess = ProcessInfo.processInfo.processIdentifier
+        return windows.compactMap { window in
+            guard window[kCGWindowLayer as String] as? Int == 0,
+                  window[kCGWindowOwnerPID as String] as? pid_t != ownProcess,
+                  let bounds = window[kCGWindowBounds as String] as? NSDictionary else { return nil }
+            return CGRect(dictionaryRepresentation: bounds)
+        }
+    }
+
+    /// Whether a window fills the display. Window bounds use window-server coordinates, whose
+    /// origin is the top-left of the primary display (AppKit's is its bottom-left).
+    static func hasFullscreenWindow(in windowBounds: [CGRect], display: CGRect, primaryHeight: CGFloat) -> Bool {
+        let target = CGRect(x: display.minX, y: primaryHeight - display.maxY, width: display.width, height: display.height)
+        return windowBounds.contains { window in
+            abs(window.minX - target.minX) <= 1 && abs(window.minY - target.minY) <= 1
+                && abs(window.width - target.width) <= 1 && abs(window.height - target.height) <= 1
+        }
     }
 }

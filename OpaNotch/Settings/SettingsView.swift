@@ -138,6 +138,7 @@ private struct AppIdentityRow: View {
 private struct GeneralSettings: View {
     @Default(.showMenuBarIcon) private var showMenuBarIcon
     @Default(.preferredScreenUUID) private var preferredScreenUUID
+    @State private var screens = NSScreen.screens
     @Default(.hideFromScreenRecording) private var hideFromScreenRecording
     @Default(.openOnHover) private var openOnHover
     @Default(.hoverDelay) private var hoverDelay
@@ -149,9 +150,13 @@ private struct GeneralSettings: View {
                 LaunchAtLogin.Toggle("Open at login")
                 Toggle("Show menu bar icon", isOn: $showMenuBarIcon)
                 Picker("Display", selection: $preferredScreenUUID) {
-                    Text("Automatic (built-in notch)").tag(String?.none)
-                    ForEach(NSScreen.screens, id: \.displayUUID) { screen in
+                    Text("All displays").tag(String?.none)
+                    ForEach(screens.filter { $0.displayUUID != nil }, id: \.self) { screen in
                         Text(screen.localizedName).tag(screen.displayUUID)
+                    }
+                    // A chosen display that's unplugged: the notch shows everywhere until it's back.
+                    if let preferredScreenUUID, !screens.contains(where: { $0.displayUUID == preferredScreenUUID }) {
+                        Text("Disconnected display").tag(Optional(preferredScreenUUID))
                     }
                 }
                 Toggle("Hide from screen sharing and recordings", isOn: $hideFromScreenRecording)
@@ -180,6 +185,9 @@ private struct GeneralSettings: View {
             }
         }
         .formStyle(.grouped)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+            screens = NSScreen.screens
+        }
     }
 }
 

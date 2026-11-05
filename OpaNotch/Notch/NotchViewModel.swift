@@ -18,6 +18,7 @@ final class NotchViewModel: ObservableObject {
     @Published private(set) var closedSize = CGSize(width: 185, height: 32)
     /// Closed height while showing an activity: down to the menu bar's bottom edge.
     @Published private(set) var activityHeight: CGFloat = 32
+    @Published private(set) var layout = NotchGeometry.layout(forDisplay: NotchGeometry.maxOpenSize)
     @Published var isHovering = false {
         didSet { if isHovering { awaitingPointerReturn = false } }
     }
@@ -29,6 +30,8 @@ final class NotchViewModel: ObservableObject {
     @Published var hasQuickAddDraft = false
 
     weak var panel: NSPanel?
+    /// Lets the notches on other displays make way when this one opens.
+    var onOpen: (() -> Void)?
 
     private var previousApp: NSRunningApplication?
     /// Counted, so a submenu closing doesn't end the hold while its parent is still open.
@@ -48,6 +51,10 @@ final class NotchViewModel: ObservableObject {
         })
     }
 
+    deinit {
+        observers.forEach { NotificationCenter.default.removeObserver($0) }
+    }
+
     var isOpen: Bool { state == .open }
 
     /// Something the user is in the middle of keeps the notch from collapsing under them.
@@ -63,7 +70,7 @@ final class NotchViewModel: ObservableObject {
 
     private var pointerIsOverOpenNotch: Bool {
         guard let frame = panel?.frame else { return false }
-        let size = NotchGeometry.openSize
+        let size = layout.openSize
         let rect = NSRect(x: frame.midX - size.width / 2, y: frame.maxY - size.height, width: size.width, height: size.height)
         return rect.contains(NSEvent.mouseLocation)
     }
@@ -71,6 +78,7 @@ final class NotchViewModel: ObservableObject {
     func update(for screen: NSScreen) {
         closedSize = NotchGeometry.closedSize(for: screen)
         activityHeight = NotchGeometry.activityHeight(for: screen)
+        layout = NotchGeometry.layout(forDisplay: screen.frame.size)
     }
 
     func open() {
@@ -78,6 +86,7 @@ final class NotchViewModel: ObservableObject {
         withAnimation(Motion.adaptive(Motion.open)) {
             state = .open
         }
+        onOpen?()
         AgendaStore.shared.reload()
         RemindersStore.shared.reload()
     }
@@ -94,10 +103,6 @@ final class NotchViewModel: ObservableObject {
             state = .closed
             isHovering = false
         }
-    }
-
-    func toggle() {
-        isOpen ? close(force: true) : open()
     }
 
     func requestQuickAdd() {

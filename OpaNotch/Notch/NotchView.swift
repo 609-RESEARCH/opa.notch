@@ -24,7 +24,7 @@ struct NotchView: View {
         TimelineView(.everyMinute) { context in
             let activity = liveActivity(at: context.date)
             notch(activity: activity, now: context.date)
-                .frame(width: NotchGeometry.windowSize.width, height: NotchGeometry.windowSize.height, alignment: .top)
+                .frame(width: vm.layout.windowSize.width, height: vm.layout.windowSize.height, alignment: .top)
         }
         .preferredColorScheme(.dark)
     }
@@ -65,7 +65,7 @@ struct NotchView: View {
         // A second activity floats beside the notch, never inside it.
         return DetachedLayout(gap: Self.detachedGap) {
             surface
-            if showWings, case .reminders(let due, let overdue)? = activity.secondary {
+            if showWings, vm.layout.fitsDetachedActivity, case .reminders(let due, let overdue)? = activity.secondary {
                 DetachedRemindersBubble(due: due, overdue: overdue, height: vm.activityHeight - 6)
                     .transition(.detach)
             }
@@ -90,13 +90,12 @@ struct NotchView: View {
     /// more becomes available, up to the full size (where lists start scrolling).
     private func expandedSize(at now: Date) -> CGSize {
         let header = max(28, vm.closedSize.height)
-        let panels = max(
-            AgendaPanel.idealHeight(store: agenda, now: now),
-            RemindersPanel.idealHeight(store: reminders, scope: reminderScope, now: now)
-        )
+        let agendaHeight = AgendaPanel.idealHeight(store: agenda, now: now)
+        let remindersHeight = RemindersPanel.idealHeight(store: reminders, scope: reminderScope, now: now)
+        let panels = vm.layout.stacksPanels ? agendaHeight + 10 + remindersHeight : max(agendaHeight, remindersHeight)
         let height = header + 8 + panels + Metrics.notchInset
-        let clamped = min(NotchGeometry.openSize.height, max(NotchGeometry.minimumOpenHeight, height))
-        return CGSize(width: NotchGeometry.openSize.width, height: clamped)
+        let clamped = min(vm.layout.openSize.height, max(NotchGeometry.minimumOpenHeight, height))
+        return CGSize(width: vm.layout.openSize.width, height: clamped)
     }
 
     /// Gap between the notch and a detached activity.
@@ -163,9 +162,16 @@ private struct OpenNotchContent: View {
     var body: some View {
         VStack(spacing: 8) {
             header
-            HStack(spacing: 10) {
-                AgendaPanel(now: now)
-                RemindersPanel(now: now)
+            if vm.layout.stacksPanels {
+                VStack(spacing: 10) {
+                    AgendaPanel(now: now)
+                    RemindersPanel(now: now)
+                }
+            } else {
+                HStack(spacing: 10) {
+                    AgendaPanel(now: now)
+                    RemindersPanel(now: now)
+                }
             }
         }
         // Same gap to the notch's side walls and its bottom edge, so the panels' corners
@@ -186,7 +192,8 @@ private struct OpenNotchContent: View {
                 .padding(.trailing, Self.cameraSpacing)
                 .frame(maxWidth: .infinity, alignment: .trailing)
 
-            Color.clear.frame(width: vm.closedSize.width)
+            // Displays narrow enough to stack are never ones with a camera to work around.
+            Color.clear.frame(width: vm.layout.stacksPanels ? 16 : vm.closedSize.width)
 
             HStack(spacing: 8) {
                 trailingValue
@@ -224,11 +231,15 @@ private struct OpenNotchContent: View {
             Text(event.countdown(at: now, verbose: true))
                 .font(Typography.headerValue)
                 .foregroundStyle(event.color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
                 .contentTransition(.numericText(countsDown: true))
         case .reminders(let due, _):
             Text("\(due) due")
                 .font(Typography.headerValue)
                 .foregroundStyle(activity.tint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
                 .contentTransition(.numericText())
         case nil:
             EmptyView()

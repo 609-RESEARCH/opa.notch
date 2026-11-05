@@ -11,98 +11,223 @@ import Defaults
 import KeyboardShortcuts
 import SwiftUI
 
+/// Keeps one notch on each display, adding and removing them as displays come and go.
 @MainActor
 final class NotchWindowController {
-    let viewModel = NotchViewModel()
-
-    private var panel: NotchPanel?
+    private var notches: [CGDirectDisplayID: DisplayNotch] = [:]
     private var cancellables = Set<AnyCancellable>()
-    private var screenObserver: NSObjectProtocol?
+    private var observers: [NSObjectProtocol] = []
+    private var fullscreenCheck: Task<Void, Never>?
     private var clickOutsideMonitor: Any?
     private var escapeMonitor: Any?
 
     func start() {
-        createPanel()
-        reposition()
+        syncDisplays()
 
-        screenObserver = NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.reposition() }
-        }
+            MainActor.assumeIsolated { self?.syncDisplays() }
+        })
+
+        // Entering or leaving full screen switches Space, which can also change a display's
+        // menu bar height. Bringing a full-screen app forward activates it.
+        let workspace = NSWorkspace.shared.notificationCenter
+        observers.append(workspace.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.syncDisplays() }
+        })
+        observers.append(workspace.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.scheduleFullscreenCheck() }
+        })
 
         Defaults.publisher(.preferredScreenUUID, options: [])
-            .sink { [weak self] _ in self?.reposition() }
+            .sink { [weak self] _ in self?.syncDisplays() }
             .store(in: &cancellables)
 
         KeyboardShortcuts.onKeyDown(for: .toggleNotch) { [weak self] in
-            self?.viewModel.toggle()
+            self?.toggle()
         }
         KeyboardShortcuts.onKeyDown(for: .quickAddReminder) { [weak self] in
-            guard let self else { return }
-            if viewModel.isOpen && viewModel.keyboardActive {
-                viewModel.close(force: true)
-            } else {
-                viewModel.requestQuickAdd()
-            }
+            self?.toggleQuickAdd()
         }
 
         installMonitors()
     }
 
-    private func createPanel() {
-        let rect = NSRect(origin: .zero, size: NotchGeometry.windowSize)
-        let panel = NotchPanel(contentRect: rect)
-        let hosting = NSHostingView(rootView: NotchView().environmentObject(viewModel))
-        hosting.sizingOptions = []
-        panel.contentView = hosting
-        panel.orderFrontRegardless()
-        NotchSpaceManager.shared.notchSpace.windows.insert(panel)
+    // MARK: - Actions
 
-        viewModel.panel = panel
-        self.panel = panel
+    /// Opens the notch on the display the pointer is on.
+    func open() {
+        notchUnderPointer?.viewModel.open()
     }
 
-    private func reposition() {
-        guard let panel, let screen = NotchGeometry.targetScreen(preferredUUID: Defaults[.preferredScreenUUID]) else { return }
-        viewModel.update(for: screen)
-        let frame = screen.frame
-        panel.setFrame(
-            NSRect(
-                x: frame.midX - NotchGeometry.windowSize.width / 2,
-                y: frame.maxY - NotchGeometry.windowSize.height,
-                width: NotchGeometry.windowSize.width,
-                height: NotchGeometry.windowSize.height
-            ),
-            display: true
-        )
+    /// Starts a new reminder in the notch already open, otherwise under the pointer.
+    func quickAdd() {
+        (openNotches.first ?? notchUnderPointer)?.viewModel.requestQuickAdd()
+    }
+
+    private func toggle() {
+        if openNotches.isEmpty {
+            open()
+        } else {
+            closeAll()
+        }
+    }
+
+    private func toggleQuickAdd() {
+        if openNotches.contains(where: \.viewModel.keyboardActive) {
+            closeAll()
+        } else {
+            quickAdd()
+        }
+    }
+
+    private func closeAll(restoreFocus: Bool = true) {
+        openNotches.forEach { $0.viewModel.close(force: true, restoreFocus: restoreFocus) }
+    }
+
+    private var openNotches: [DisplayNotch] {
+        notches.values.filter(\.viewModel.isOpen)
+    }
+
+    private var notchUnderPointer: DisplayNotch? {
+        // Grown by a point because the pointer can rest exactly on a display's top edge,
+        // which a CGRect doesn't count as inside.
+        let pointer = NSEvent.mouseLocation
+        return notches.values.first { $0.screenFrame.insetBy(dx: -1, dy: -1).contains(pointer) }
+            ?? notches.values.first
+    }
+
+    // MARK: - Displays
+
+    private func syncDisplays() {
+        var connected = Set<CGDirectDisplayID>()
+        for screen in NotchGeometry.targetScreens(preferredUUID: Defaults[.preferredScreenUUID]) {
+            guard let id = screen.displayID else { continue }
+            connected.insert(id)
+            if let notch = notches[id] {
+                notch.place(on: screen)
+            } else {
+                let notch = DisplayNotch(screen: screen)
+                // A notch the user is in the middle of (a half-typed reminder, say) stays put.
+                notch.viewModel.onOpen = { [weak self, weak notch] in
+                    self?.notches.values.filter { $0 !== notch }.forEach { $0.viewModel.close() }
+                }
+                notches[id] = notch
+            }
+        }
+        for id in Set(notches.keys).subtracting(connected) {
+            notches.removeValue(forKey: id)?.remove()
+        }
+        scheduleFullscreenCheck()
+    }
+
+    /// Checks now, and again once the full-screen animation has finished moving the window.
+    private func scheduleFullscreenCheck() {
+        updateFullscreen()
+        fullscreenCheck?.cancel()
+        fullscreenCheck = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            self?.updateFullscreen()
+        }
+    }
+
+    private func updateFullscreen() {
+        let bounds = NotchGeometry.fullscreenCandidateBounds()
+        notches.values.forEach { $0.updateFullscreen(windowBounds: bounds) }
     }
 
     #if DEBUG
     func writeSnapshot() {
-        guard let panel else { return }
-        DebugCapture.write(panel, name: "opa-snapshot")
+        let ordered = notches.keys.sorted().compactMap { notches[$0] }
+        for (index, notch) in ordered.enumerated() {
+            DebugCapture.write(notch.panel, name: index == 0 ? "opa-snapshot" : "opa-snapshot-\(index + 1)")
+        }
     }
     #endif
+
+    // MARK: - Monitors
 
     private func installMonitors() {
         // A click anywhere else is a clear "I'm done here". That app takes focus itself.
         clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, self.viewModel.isOpen else { return }
-                self.viewModel.close(force: true, restoreFocus: false)
-            }
+            MainActor.assumeIsolated { self?.closeAll(restoreFocus: false) }
         }
 
         // Escape always has a way out, even mid-typing.
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard event.keyCode == 53 else { return event }
             let handled = MainActor.assumeIsolated {
-                guard let self, self.viewModel.isOpen else { return false }
-                self.viewModel.close(force: true)
+                guard let self, !self.openNotches.isEmpty else { return false }
+                self.closeAll()
                 return true
             }
             return handled ? nil : event
         }
+    }
+}
+
+/// The notch on one display: its window and its own open or closed state.
+@MainActor
+private final class DisplayNotch {
+    let viewModel = NotchViewModel()
+    let panel: NotchPanel
+    private(set) var screenFrame: CGRect
+    private var hasHardwareNotch: Bool
+    private var hiddenForFullscreen = false
+    private var cancellable: AnyCancellable?
+
+    init(screen: NSScreen) {
+        screenFrame = screen.frame
+        hasHardwareNotch = screen.safeAreaInsets.top > 0
+        viewModel.update(for: screen)
+        panel = NotchPanel(contentRect: Self.panelFrame(on: screen, layout: viewModel.layout))
+        viewModel.panel = panel
+
+        let hosting = NSHostingView(rootView: NotchView().environmentObject(viewModel))
+        hosting.sizingOptions = []
+        panel.contentView = hosting
+        panel.orderFrontRegardless()
+        NotchSpaceManager.shared.notchSpace.windows.insert(panel)
+
+        // $state publishes before the property changes, so use the value it's handed.
+        cancellable = viewModel.$state.sink { [weak self] state in
+            self?.updateVisibility(isOpen: state == .open)
+        }
+    }
+
+    func place(on screen: NSScreen) {
+        screenFrame = screen.frame
+        hasHardwareNotch = screen.safeAreaInsets.top > 0
+        viewModel.update(for: screen)
+        panel.setFrame(Self.panelFrame(on: screen, layout: viewModel.layout), display: true)
+    }
+
+    func remove() {
+        viewModel.close(force: true)
+        NotchSpaceManager.shared.notchSpace.windows.remove(panel)
+        panel.contentView = nil
+        panel.close()
+    }
+
+    /// A display with a camera housing already has a black band in full screen, so its notch
+    /// can stay. Elsewhere the closed shape would sit on top of the app's content.
+    func updateFullscreen(windowBounds: [CGRect]) {
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? screenFrame.height
+        hiddenForFullscreen = !hasHardwareNotch
+            && NotchGeometry.hasFullscreenWindow(in: windowBounds, display: screenFrame, primaryHeight: primaryHeight)
+        updateVisibility(isOpen: viewModel.isOpen)
+    }
+
+    private func updateVisibility(isOpen: Bool) {
+        // The shortcuts can still open a hidden notch.
+        let visible = isOpen || !hiddenForFullscreen
+        panel.alphaValue = visible ? 1 : 0
+        panel.ignoresMouseEvents = !visible
+    }
+
+    private static func panelFrame(on screen: NSScreen, layout: NotchLayout) -> NSRect {
+        NotchGeometry.panelFrame(display: screen.frame, scale: screen.backingScaleFactor, windowSize: layout.windowSize)
     }
 }
