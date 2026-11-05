@@ -82,6 +82,13 @@ enum NotchGeometry {
         )
     }
 
+    /// The window while the notch is closed: a strip along the top edge with room for the
+    /// activity beside the notch. A window this high up always sits above other windows,
+    /// so it stays out of the way of anything below the menu bar until the notch opens.
+    static func closedWindowSize(layout: NotchLayout, notchWidth: CGFloat, height: CGFloat) -> CGSize {
+        CGSize(width: min(notchWidth + 300, layout.windowSize.width), height: min(height + 6, layout.windowSize.height))
+    }
+
     /// Centred along the display's top edge and snapped to whole pixels: a window on a
     /// half pixel, as an odd-width 1x display would give, draws blurry.
     static func panelFrame(display: CGRect, scale: CGFloat, windowSize: CGSize) -> CGRect {

@@ -20,6 +20,7 @@ final class NotchWindowController {
     private var fullscreenCheck: Task<Void, Never>?
     private var clickOutsideMonitor: Any?
     private var escapeMonitor: Any?
+    private var ownWindowClickMonitor: Any?
 
     func start() {
         syncDisplays()
@@ -155,6 +156,15 @@ final class NotchWindowController {
             MainActor.assumeIsolated { self?.closeAll(restoreFocus: false) }
         }
 
+        // The monitor above only sees other apps. Clicking one of our own windows, like Settings,
+        // is just as clear, while clicks inside a notch are for the notch.
+        ownWindowClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            if !(event.window is NotchPanel) {
+                MainActor.assumeIsolated { self?.closeAll(restoreFocus: false) }
+            }
+            return event
+        }
+
         // Escape always has a way out, even mid-typing.
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard event.keyCode == 53 else { return event }
@@ -182,12 +192,19 @@ private final class DisplayNotch {
     private var hasHardwareNotch: Bool
     private var hiddenForFullscreen = false
     private var cancellable: AnyCancellable?
+    private var scale: CGFloat
+    private var shrinkTask: Task<Void, Never>?
+
+    /// Long enough for the closing spring to finish inside the larger window.
+    private static let closeAnimationTime: Duration = .milliseconds(700)
 
     init(screen: NSScreen) {
         screenFrame = screen.frame
         hasHardwareNotch = screen.safeAreaInsets.top > 0
+        scale = screen.backingScaleFactor
         viewModel.update(for: screen)
-        panel = NotchPanel(contentRect: Self.panelFrame(on: screen, layout: viewModel.layout))
+        panel = NotchPanel(contentRect: .zero)
+        panel.setFrame(panelFrame(isOpen: false), display: false)
         viewModel.panel = panel
 
         let hosting = NSHostingView(rootView: NotchView().environmentObject(viewModel))
@@ -199,17 +216,20 @@ private final class DisplayNotch {
         // $state publishes before the property changes, so use the value it's handed.
         cancellable = viewModel.$state.sink { [weak self] state in
             self?.updateVisibility(isOpen: state == .open)
+            self?.resizePanel(isOpen: state == .open)
         }
     }
 
     func place(on screen: NSScreen) {
         screenFrame = screen.frame
         hasHardwareNotch = screen.safeAreaInsets.top > 0
+        scale = screen.backingScaleFactor
         viewModel.update(for: screen)
-        panel.setFrame(Self.panelFrame(on: screen, layout: viewModel.layout), display: true)
+        panel.setFrame(panelFrame(isOpen: viewModel.isOpen), display: true)
     }
 
     func remove() {
+        shrinkTask?.cancel()
         viewModel.close(force: true)
         NotchSpaceManager.shared.notchSpace.windows.remove(panel)
         panel.contentView = nil
@@ -232,7 +252,25 @@ private final class DisplayNotch {
         panel.ignoresMouseEvents = !visible
     }
 
-    private static func panelFrame(on screen: NSScreen, layout: NotchLayout) -> NSRect {
-        NotchGeometry.panelFrame(display: screen.frame, scale: screen.backingScaleFactor, windowSize: layout.windowSize)
+    /// Grows before the notch opens so the spring has room, and shrinks once it has closed.
+    private func resizePanel(isOpen: Bool) {
+        shrinkTask?.cancel()
+        guard !isOpen else {
+            panel.setFrame(panelFrame(isOpen: true), display: false)
+            return
+        }
+        shrinkTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.closeAnimationTime)
+            guard !Task.isCancelled, let self, !self.viewModel.isOpen else { return }
+            self.panel.setFrame(self.panelFrame(isOpen: false), display: true)
+        }
+    }
+
+    private func panelFrame(isOpen: Bool) -> NSRect {
+        let layout = viewModel.layout
+        let size = isOpen
+            ? layout.windowSize
+            : NotchGeometry.closedWindowSize(layout: layout, notchWidth: viewModel.closedSize.width, height: viewModel.activityHeight)
+        return NotchGeometry.panelFrame(display: screenFrame, scale: scale, windowSize: size)
     }
 }

@@ -24,7 +24,7 @@ struct NotchView: View {
         TimelineView(.everyMinute) { context in
             let activity = liveActivity(at: context.date)
             notch(activity: activity, now: context.date)
-                .frame(width: vm.layout.windowSize.width, height: vm.layout.windowSize.height, alignment: .top)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .preferredColorScheme(.dark)
     }
