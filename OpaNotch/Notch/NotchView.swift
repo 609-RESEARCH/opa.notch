@@ -156,6 +156,7 @@ struct NotchView: View {
 
 private struct OpenNotchContent: View {
     @EnvironmentObject var vm: NotchViewModel
+    @ObservedObject private var updates = UpdateChecker.shared
     let now: Date
     /// What the closed notch was showing. The header is its enlarged version, so elements
     /// keep their place around the camera as the notch expands.
@@ -200,6 +201,11 @@ private struct OpenNotchContent: View {
             HStack(spacing: 8) {
                 trailingValue
                 Spacer(minLength: 0)
+                if let release = updates.releaseToAnnounce {
+                    UpdateButton(release: release, updates: updates) {
+                        vm.close(force: true, restoreFocus: false)
+                    }
+                }
                 IconButton(systemName: "gearshape.fill", help: "Settings") {
                     vm.close(force: true, restoreFocus: false)
                     SettingsWindowController.shared.showWindow()
@@ -246,5 +252,43 @@ private struct OpenNotchContent: View {
         case nil:
             EmptyView()
         }
+    }
+}
+
+/// A quiet way to say a new version exists: opens its release page, or can be dismissed.
+private struct UpdateButton: View {
+    let release: AppRelease
+    @ObservedObject var updates: UpdateChecker
+    let didOpen: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button {
+                updates.openReleasePage()
+                didOpen()
+            } label: {
+                Text("Update to \(release.version)")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Palette.accent)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.leading, 10)
+                    .padding(.trailing, 4)
+                    .frame(height: 24)
+            }
+            .buttonStyle(PressableStyle())
+            .help("See what's new in \(release.version)")
+
+            Button { updates.dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(Palette.secondary)
+                    .frame(width: 22, height: 24)
+            }
+            .buttonStyle(PressableStyle(scale: 0.85))
+            .help("Don't show this for \(release.version)")
+            .accessibilityLabel("Dismiss update")
+        }
+        .background(Capsule().fill(Palette.accent.opacity(0.16)))
     }
 }

@@ -140,6 +140,7 @@ private struct GeneralSettings: View {
     @Default(.preferredScreenUUID) private var preferredScreenUUID
     @State private var screens = NSScreen.screens
     @Default(.hideFromScreenRecording) private var hideFromScreenRecording
+    @Default(.checkForUpdates) private var checkForUpdates
     @Default(.openOnHover) private var openOnHover
     @Default(.hoverDelay) private var hoverDelay
     @Default(.enableHaptics) private var enableHaptics
@@ -160,6 +161,8 @@ private struct GeneralSettings: View {
                     }
                 }
                 Toggle("Hide from screen sharing and recordings", isOn: $hideFromScreenRecording)
+                Toggle("Check for updates", isOn: $checkForUpdates)
+                    .onChange(of: checkForUpdates) { _, _ in UpdateChecker.shared.start() }
             }
 
             Section("Opening") {
@@ -315,11 +318,35 @@ private struct RemindersSettings: View {
 // MARK: - About
 
 private struct AboutSettings: View {
+    @ObservedObject private var updates = UpdateChecker.shared
     private static let studioURL = URL(string: "https://609-research.github.io")!
 
     private var version: String {
         let info = Bundle.main.infoDictionary
         return "\(info?["CFBundleShortVersionString"] as? String ?? "") (\(info?["CFBundleVersion"] as? String ?? ""))"
+    }
+
+    @ViewBuilder
+    private var updateStatus: some View {
+        switch updates.status {
+        case .available(let release):
+            Button("Update to \(release.version)…") { updates.openReleasePage() }
+            Text("Installed with Homebrew? Run brew upgrade --cask opa-notch")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+        case .checking:
+            Text("Checking for updates…")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        case .upToDate, .failed, .idle:
+            Button("Check for Updates") { Task { await updates.check() } }
+            if updates.status != .idle {
+                Text(updates.status == .upToDate ? "You're on the latest version." : "Couldn't check for updates.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     var body: some View {
@@ -332,6 +359,7 @@ private struct AboutSettings: View {
                 .tracking(-0.3)
             Text("Version \(version)")
                 .foregroundStyle(.secondary)
+            updateStatus
             Text("Your day and your reminders, living in the notch.")
                 .foregroundStyle(.secondary)
                 .padding(.top, 4)

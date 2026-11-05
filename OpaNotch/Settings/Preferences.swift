@@ -26,6 +26,8 @@ extension Defaults.Keys {
     static let showMenuBarIcon = Key<Bool>("showMenuBarIcon", default: true)
     static let preferredScreenUUID = Key<String?>("preferredScreenUUID", default: nil)
     static let hideFromScreenRecording = Key<Bool>("hideFromScreenRecording", default: false)
+    static let checkForUpdates = Key<Bool>("checkForUpdates", default: true)
+    static let dismissedUpdateVersion = Key<String?>("dismissedUpdateVersion", default: nil)
 
     // Behavior
     static let openOnHover = Key<Bool>("openOnHover", default: true)

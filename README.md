@@ -26,13 +26,30 @@ Everything syncs through Apple Calendar and Reminders. opa.notch stores no data 
 
 ## Install
 
-1. Download [opa.notch.dmg](../../releases/latest/download/opa.notch.dmg) and drag the app into Applications (macOS 14+).
-2. On first launch, approve it in **System Settings → Privacy & Security → Open Anyway**. It isn't notarized yet.
-3. Hover over the notch and click **Allow Access** for Calendar and Reminders.
+With [Homebrew](https://brew.sh):
+
+```bash
+brew install --cask 609-research/tap/opa-notch
+```
+
+Or download [opa.notch.dmg](../../releases/latest/download/opa.notch.dmg) and drag the app into Applications (macOS 14+). Then:
+
+1. On first launch, approve it in **System Settings → Privacy & Security → Open Anyway**. It isn't notarized yet.
+2. Hover over the notch and click **Allow Access** for Calendar and Reminders.
+
+## Update
+
+opa.notch tells you in the notch when a new version is out. Download it from the release page, or run:
+
+```bash
+brew upgrade --cask opa-notch
+```
+
+The check only asks GitHub for the latest version number. Turn it off in **Settings → General**.
 
 ## Build
 
-Open `OpaNotch.xcodeproj` in Xcode 26 and run the **OpaNotch** scheme. To package a release, run `scripts/build-release.sh`. It writes `dist/opa.notch.dmg` to attach to a GitHub release.
+Open `OpaNotch.xcodeproj` in Xcode 26 and run the **OpaNotch** scheme. To package a release, run `scripts/build-release.sh`. Attach `dist/opa.notch.dmg` and its checksum to a GitHub release, then copy `dist/opa-notch.rb` to `Casks/` in [homebrew-tap](https://github.com/609-RESEARCH/homebrew-tap).
 
 ## License
 

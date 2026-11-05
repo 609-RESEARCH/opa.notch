@@ -1,6 +1,7 @@
 #!/bin/bash
 # Builds a Release opa.notch.app and packages it as dist/opa.notch.dmg
-# (drag-to-Applications disk image) plus a SHA-256 checksum.
+# (drag-to-Applications disk image), plus a SHA-256 checksum and the Homebrew
+# cask for that version (dist/opa-notch.rb).
 #
 # Usage: scripts/build-release.sh
 #
@@ -56,6 +57,8 @@ hdiutil create \
     "$DIST/$APP_NAME.dmg" >/dev/null
 
 (cd "$DIST" && shasum -a 256 "$APP_NAME.dmg" > "$APP_NAME.dmg.sha256")
+
+"$ROOT/scripts/generate-cask.sh" "$VERSION" "$DIST/$APP_NAME.dmg" > "$DIST/opa-notch.rb"
 
 echo "› Done: dist/$APP_NAME.dmg ($VERSION)"
 cat "$DIST/$APP_NAME.dmg.sha256"

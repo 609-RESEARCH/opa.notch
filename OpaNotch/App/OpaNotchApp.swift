@@ -10,10 +10,15 @@ import SwiftUI
 struct OpaNotchApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Default(.showMenuBarIcon) private var showMenuBarIcon
+    @ObservedObject private var updates = UpdateChecker.shared
 
     var body: some Scene {
         // A template image: the app icon's cut disc, tinted by the system for the menu bar.
         MenuBarExtra("opa.notch", image: "MenuBarIcon", isInserted: $showMenuBarIcon) {
+            if let release = updates.availableRelease {
+                Button("Update to \(release.version)…") { updates.openReleasePage() }
+                Divider()
+            }
             Button("Open Notch") { appDelegate.notch.open() }
             Button("New Reminder…") { appDelegate.notch.quickAdd() }
             Divider()
@@ -32,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         notch.start()
+        UpdateChecker.shared.start()
 
         // Debug aid: `open opa.notch.app --args -OpaOpenOnLaunch YES` to inspect the open state.
         if UserDefaults.standard.bool(forKey: "OpaOpenOnLaunch") {
