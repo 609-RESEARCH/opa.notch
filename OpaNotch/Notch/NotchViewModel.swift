@@ -28,6 +28,8 @@ final class NotchViewModel: ObservableObject {
     @Published private(set) var keyboardActive = false
     /// A half-typed reminder keeps the notch open when the pointer leaves.
     @Published var hasQuickAddDraft = false
+    /// The reminder whose custom due date is being picked, which also keeps the notch open.
+    @Published private(set) var dueEditorItem: ReminderItem?
 
     weak var panel: NSPanel?
     /// Lets the notches on other displays make way when this one opens.
@@ -59,7 +61,7 @@ final class NotchViewModel: ObservableObject {
 
     /// Something the user is in the middle of keeps the notch from collapsing under them.
     private var isPinnedOpen: Bool {
-        openMenus > 0 || awaitingPointerReturn || (keyboardActive && hasQuickAddDraft)
+        openMenus > 0 || awaitingPointerReturn || dueEditorItem != nil || (keyboardActive && hasQuickAddDraft)
     }
 
     private func menuDidEnd() {
@@ -98,6 +100,7 @@ final class NotchViewModel: ObservableObject {
         guard state != .closed else { return }
         if !force && isPinnedOpen { return }
         awaitingPointerReturn = false
+        dueEditorItem = nil
         endKeyboard(restoreFocus: restoreFocus)
         withAnimation(Motion.adaptive(Motion.close)) {
             state = .closed
@@ -109,6 +112,19 @@ final class NotchViewModel: ObservableObject {
         open()
         beginKeyboard()
         quickAddFocusRequest += 1
+    }
+
+    // MARK: - Custom due date
+
+    /// The time field takes typing, so the picker needs the keyboard like quick add does.
+    func editDue(of item: ReminderItem) {
+        withAnimation(Motion.adaptive(Motion.standard)) { dueEditorItem = item }
+        beginKeyboard()
+    }
+
+    func dismissDueEditor() {
+        withAnimation(Motion.adaptive(Motion.standard)) { dueEditorItem = nil }
+        if !hasQuickAddDraft { endKeyboard(restoreFocus: true) }
     }
 
     // MARK: - Keyboard focus

@@ -160,7 +160,12 @@ final class NotchWindowController {
             guard event.keyCode == 53 else { return event }
             let handled = MainActor.assumeIsolated {
                 guard let self, !self.openNotches.isEmpty else { return false }
-                self.closeAll()
+                // With the due date picker up, Escape only backs out of the picker.
+                if let editing = self.openNotches.first(where: { $0.viewModel.dueEditorItem != nil }) {
+                    editing.viewModel.dismissDueEditor()
+                } else {
+                    self.closeAll()
+                }
                 return true
             }
             return handled ? nil : event

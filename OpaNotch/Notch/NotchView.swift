@@ -91,7 +91,9 @@ struct NotchView: View {
     private func expandedSize(at now: Date) -> CGSize {
         let header = max(28, vm.closedSize.height)
         let agendaHeight = AgendaPanel.idealHeight(store: agenda, now: now)
-        let remindersHeight = RemindersPanel.idealHeight(store: reminders, scope: reminderScope, now: now)
+        let remindersHeight = vm.dueEditorItem != nil
+            ? Metrics.panelChrome + DueDateEditor.height
+            : RemindersPanel.idealHeight(store: reminders, scope: reminderScope, now: now)
         let panels = vm.layout.stacksPanels ? agendaHeight + 10 + remindersHeight : max(agendaHeight, remindersHeight)
         let height = header + 8 + panels + Metrics.notchInset
         let clamped = min(vm.layout.openSize.height, max(NotchGeometry.minimumOpenHeight, height))

@@ -20,6 +20,10 @@ struct ReminderItem: Identifiable, Equatable {
     let listTitle: String
     let listColor: Color
 
+    var dueDate: DueDate? {
+        due.map { DueDate(date: $0, hasTime: dueHasTime) }
+    }
+
     func isOverdue(at now: Date) -> Bool {
         guard let due, !isCompleted else { return false }
         return dueHasTime ? due < now : due < Calendar.current.startOfDay(for: now)
@@ -42,53 +46,6 @@ struct ReminderItem: Identifiable, Equatable {
     func with(completed: Bool? = nil, priority: Int? = nil) -> ReminderItem {
         ReminderItem(id: id, title: title, due: due, dueHasTime: dueHasTime, isCompleted: completed ?? isCompleted,
                      priority: priority ?? self.priority, listID: listID, listTitle: listTitle, listColor: listColor)
-    }
-}
-
-/// The quick due dates the Reminders app offers in its context menu.
-enum DueShortcut: CaseIterable, Identifiable {
-    case none
-    case today
-    case tomorrow
-    case nextWeekend
-    case nextWeek
-
-    var id: Self { self }
-
-    var title: String {
-        switch self {
-        case .none: "None"
-        case .today: "Today"
-        case .tomorrow: "Tomorrow"
-        case .nextWeekend: "Next Weekend"
-        case .nextWeek: "Next Week"
-        }
-    }
-
-    func day(from now: Date = .now, calendar cal: Calendar = .current) -> Date? {
-        let today = cal.startOfDay(for: now)
-        switch self {
-        case .none:
-            return nil
-        case .today:
-            return today
-        case .tomorrow:
-            return cal.date(byAdding: .day, value: 1, to: today)
-        case .nextWeekend:
-            // The coming weekend; on a weekend, the one after.
-            return cal.nextWeekend(startingAfter: now)?.start
-        case .nextWeek:
-            // The first day of next week, per the user's locale (Monday in most of Europe).
-            return cal.nextDate(after: today, matching: DateComponents(weekday: cal.firstWeekday), matchingPolicy: .nextTime)
-        }
-    }
-
-    /// The shortcut a due date corresponds to, so the menu can tick it.
-    static func matching(_ due: Date?, now: Date = .now) -> DueShortcut? {
-        guard let due else { return DueShortcut.none }
-        return allCases.first { shortcut in
-            shortcut.day(from: now).map { Calendar.current.isDate($0, inSameDayAs: due) } ?? false
-        }
     }
 }
 
@@ -126,6 +83,15 @@ enum ReminderPriority: CaseIterable, Identifiable {
         case .low: "Low"
         case .medium: "Medium"
         case .high: "High"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .none: .clear
+        case .low: Palette.priorityLow
+        case .medium: Palette.priorityMedium
+        case .high: Palette.priorityHigh
         }
     }
 
@@ -340,26 +306,22 @@ final class RemindersStore: ObservableObject {
         reload()
     }
 
-    /// Moves the reminder to `day`, keeping its time of day (and its alert) if it had one.
-    func setDue(_ item: ReminderItem, to day: Date?) {
+    /// Sets or clears the due date. A timed reminder gets an alert at that moment.
+    func setDue(_ item: ReminderItem, to due: DueDate?) {
         guard let reminder = EventKitAccess.store.calendarItem(withIdentifier: item.id) as? EKReminder else { return }
-        let cal = Calendar.current
 
-        // The alert opa.notch adds for timed reminders is pinned to the old moment.
+        // The alert for a timed reminder is pinned to the old moment.
         if let old = item.due, item.dueHasTime {
             for alarm in reminder.alarms ?? [] where alarm.absoluteDate == old {
                 reminder.removeAlarm(alarm)
             }
         }
 
-        if let day {
-            var due = cal.startOfDay(for: day)
-            if let old = item.due, item.dueHasTime {
-                let time = cal.dateComponents([.hour, .minute], from: old)
-                due = cal.date(bySettingHour: time.hour ?? 0, minute: time.minute ?? 0, second: 0, of: due) ?? due
-                reminder.addAlarm(EKAlarm(absoluteDate: due))
+        if let due {
+            reminder.dueDateComponents = Self.components(for: due.date, includeTime: due.hasTime)
+            if due.hasTime {
+                reminder.addAlarm(EKAlarm(absoluteDate: due.date))
             }
-            reminder.dueDateComponents = Self.components(for: due, includeTime: item.dueHasTime)
         } else {
             reminder.dueDateComponents = nil
         }

@@ -23,7 +23,7 @@ enum NotchGeometry {
     /// Stacked panels trade width for height, so they get more of it.
     static let maxStackedHeight: CGFloat = 560
     /// Below this open width, two panels side by side would be too cramped to read.
-    static let stackingWidth: CGFloat = 600
+    static let stackingWidth: CGFloat = 680
     /// The open notch keeps at least this much of the display visible on each side.
     static let displayMargin: CGFloat = 8
     /// Room around the open notch so its shadow and hover hint are never clipped by the window.

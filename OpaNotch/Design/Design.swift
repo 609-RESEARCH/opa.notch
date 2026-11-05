@@ -44,6 +44,10 @@ enum Palette {
     /// should ever show through it.
     static let panel = Color(white: 0.1)
     static let overdue = Color(red: 1.0, green: 0.42, blue: 0.38)
+    // Reminder priority marks. Bright enough to read at small sizes on the dark panel.
+    static let priorityHigh = Color(red: 1.0, green: 0.27, blue: 0.23)
+    static let priorityMedium = Color(red: 1.0, green: 0.62, blue: 0.04)
+    static let priorityLow = Color(red: 0.25, green: 0.61, blue: 1.0)
     /// opa.notch orange, used inside the notch only. Standard controls elsewhere
     /// (Settings toggles, sidebar selection) follow the user's system accent, as in System Settings.
     static let accent = Color(red: 1.0, green: 0.624, blue: 0.039)
@@ -60,6 +64,7 @@ enum Typography {
     static let heroTitle = Font.system(size: 20, weight: .bold)
     static let heroNumber = Font.system(size: 30, weight: .bold, design: .rounded).monospacedDigit()
     static let headerValue = Font.system(size: 15, weight: .semibold, design: .rounded).monospacedDigit()
+    static let timeValue = Font.system(size: 24, weight: .bold, design: .rounded).monospacedDigit()
 }
 
 /// Concentric geometry: every inner radius is its container's radius minus the gap to it,

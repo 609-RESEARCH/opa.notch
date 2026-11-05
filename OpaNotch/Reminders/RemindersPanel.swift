@@ -8,6 +8,7 @@ import SwiftUI
 
 struct RemindersPanel: View {
     @ObservedObject var store = RemindersStore.shared
+    @EnvironmentObject var vm: NotchViewModel
     @Default(.reminderScope) private var scope
     let now: Date
 
@@ -15,9 +16,14 @@ struct RemindersPanel: View {
         PanelSurface {
             switch store.access {
             case .granted:
-                header
-                QuickAddField(scope: scope)
-                list
+                if let item = vm.dueEditorItem {
+                    DueDateEditor(item: item)
+                        .transition(.opacity)
+                } else {
+                    header
+                    QuickAddField(scope: scope)
+                    list
+                }
             case .notDetermined, .denied:
                 AccessPrompt(
                     symbol: "checklist",
@@ -262,7 +268,7 @@ private struct ReminderRow: View {
                     if !item.priorityMarks.isEmpty {
                         Text(item.priorityMarks)
                             .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(item.listColor)
+                            .foregroundStyle(item.priorityLevel.color)
                     }
                     Text(item.title)
                         .font(Typography.body)
@@ -312,17 +318,20 @@ private struct ReminderRow: View {
         Menu {
             // No tick when the date matches none of the shortcuts.
             Picker("Due Date", selection: Binding(
-                get: { DueShortcut.matching(item.due, now: now) },
-                set: { if let shortcut = $0 { store.setDue(item, to: shortcut.day()) } }
+                get: { DueShortcut.matching(item.dueDate, now: now) },
+                set: { if let shortcut = $0 { store.setDue(item, to: shortcut.due(replacing: item.dueDate)) } }
             )) {
                 Text(DueShortcut.none.title).tag(Optional(DueShortcut.none))
                 Divider()
-                ForEach(DueShortcut.allCases.filter { $0 != .none }) { shortcut in
+                ForEach(DueShortcut.available(now: now)) { shortcut in
                     Text(shortcut.title).tag(Optional(shortcut))
                 }
             }
             .pickerStyle(.inline)
             .labelsHidden()
+
+            Divider()
+            Button("Custom Date & Time…") { vm.editDue(of: item) }
         } label: {
             Label("Due Date", systemImage: "calendar")
         }
