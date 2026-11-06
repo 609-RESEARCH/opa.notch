@@ -350,6 +350,15 @@ private struct AboutSettings: View {
     }
 
     var body: some View {
+        // In a scroll view like the other panes: without one, the title bar draws a line.
+        ScrollView {
+            content
+                .containerRelativeFrame(.vertical)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+    }
+
+    private var content: some View {
         VStack(spacing: 10) {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
@@ -374,10 +383,8 @@ private struct AboutSettings: View {
                 .lineSpacing(2)
             // The logo is the link: clicking it opens the studio's website.
             Link(destination: Self.studioURL) {
+                // Not resizable: its 1x and 2x files are made for this size, so nothing resamples them.
                 Image("609ResearchLogo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(height: 44)
                     .accessibilityLabel("609 Research website")
             }
             .buttonStyle(PressableStyle(scale: 0.96))
