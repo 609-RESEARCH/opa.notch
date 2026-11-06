@@ -92,6 +92,7 @@ private struct HeroEvent: View {
     let event: AgendaEvent
     let now: Date
     @EnvironmentObject var vm: NotchViewModel
+    @State private var hovering = false
 
     var body: some View {
         let isNow = event.phase(at: now) == .now
@@ -112,11 +113,10 @@ private struct HeroEvent: View {
             }
             .frame(height: 22)
 
-            Text(event.title)
+            SlidingText(event.title, isActive: hovering)
                 .font(Typography.heroTitle)
                 .tracking(-0.3)
                 .foregroundStyle(Palette.primary)
-                .lineLimit(1)
 
             if isNow {
                 ProgressBar(progress: event.progress(at: now), color: event.color)
@@ -146,6 +146,7 @@ private struct HeroEvent: View {
             RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
                 .fill(event.color.opacity(0.16))
         )
+        .onHover { hovering = $0 }
         .contentShape(Rectangle())
         .onTapGesture {
             if let url = event.calendarAppURL {
@@ -185,7 +186,6 @@ private struct JoinButton: View {
 private struct LaterList: View {
     let events: [AgendaEvent]
     let allDay: [AgendaEvent]
-    @EnvironmentObject var vm: NotchViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -203,7 +203,7 @@ private struct LaterList: View {
                             .frame(height: AgendaPanel.allDayHeight, alignment: .top)
                     }
                     ForEach(events) { event in
-                        row(event)
+                        LaterRow(event: event)
                     }
                 }
                 .padding(.bottom, AgendaPanel.laterBottomPadding)
@@ -211,8 +211,14 @@ private struct LaterList: View {
             .scrollEdgeFade(top: 0, bottom: 12)
         }
     }
+}
 
-    private func row(_ event: AgendaEvent) -> some View {
+private struct LaterRow: View {
+    let event: AgendaEvent
+    @EnvironmentObject var vm: NotchViewModel
+    @State private var hovering = false
+
+    var body: some View {
         HStack(spacing: 8) {
             Text(TimeFormatting.time(event.start))
                 .font(Typography.numeric)
@@ -222,11 +228,9 @@ private struct LaterList: View {
             Circle()
                 .fill(event.color)
                 .frame(width: 7, height: 7)
-            Text(event.title)
+            SlidingText(event.title, isActive: hovering)
                 .font(Typography.body)
                 .foregroundStyle(Palette.primary)
-                .lineLimit(1)
-            Spacer(minLength: 0)
             if event.meetingURL != nil {
                 Image(systemName: "video.fill")
                     .font(.system(size: 10, weight: .semibold))
@@ -236,6 +240,7 @@ private struct LaterList: View {
         .padding(.horizontal, 6)
         .frame(height: AgendaPanel.laterRowHeight)
         .hoverHighlight()
+        .onHover { hovering = $0 }
         .contentShape(Rectangle())
         .onTapGesture {
             if let url = event.calendarAppURL {
@@ -279,6 +284,7 @@ private struct FreeState: View {
     let hadEvents: Bool
     let allDay: [AgendaEvent]
     let tomorrow: AgendaEvent?
+    @State private var hovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -293,10 +299,9 @@ private struct FreeState: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             if let tomorrow {
-                Text("Tomorrow \(TimeFormatting.time(tomorrow.start)) · \(tomorrow.title)")
+                SlidingText("Tomorrow \(TimeFormatting.time(tomorrow.start)) · \(tomorrow.title)", isActive: hovering)
                     .font(Typography.caption)
                     .foregroundStyle(Palette.secondary)
-                    .lineLimit(1)
             }
             if !allDay.isEmpty {
                 AllDayStrip(events: allDay)
@@ -310,5 +315,6 @@ private struct FreeState: View {
             RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
                 .fill(Palette.accent.opacity(0.12))
         )
+        .onHover { hovering = $0 }
     }
 }

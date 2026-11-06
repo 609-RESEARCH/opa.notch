@@ -256,6 +256,7 @@ private struct ReminderRow: View {
     let now: Date
     @ObservedObject var store = RemindersStore.shared
     @EnvironmentObject var vm: NotchViewModel
+    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 9) {
@@ -270,11 +271,10 @@ private struct ReminderRow: View {
                             .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(item.priorityLevel.color)
                     }
-                    Text(item.title)
+                    SlidingText(item.title, isActive: hovering)
                         .font(Typography.body)
                         .foregroundStyle(item.isCompleted ? Palette.tertiary : Palette.primary)
                         .strikethrough(item.isCompleted, color: Palette.tertiary)
-                        .lineLimit(1)
                 }
                 if let subtitle {
                     Text(subtitle)
@@ -288,6 +288,7 @@ private struct ReminderRow: View {
         .padding(.horizontal, 6)
         .frame(height: Metrics.rowHeight)
         .hoverHighlight()
+        .onHover { hovering = $0 }
         .contentShape(Rectangle())
         .contextMenu { menu }
     }
